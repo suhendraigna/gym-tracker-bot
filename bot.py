@@ -1,10 +1,14 @@
 import telebot
 from datetime import datetime
 from sheet_client import append_workout, get_today_workouts, get_week_stats
+import os
 
-TOKEN = "8250931576:AAHpd2M-7XhKFIhdQ68OLEGJH7QN0C1_jLk"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-bot = telebot.TeleBot(TOKEN)
+if not BOT_TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN belum diset")
+
+bot = telebot.TeleBot(BOT_TOKEN)
 
 @bot.message_handler(commands=["start"])
 def start_message(message):
