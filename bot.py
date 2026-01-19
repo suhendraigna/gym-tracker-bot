@@ -1,7 +1,10 @@
 import telebot
 from datetime import datetime
 from sheet_client import append_workout, get_today_workouts, get_week_stats
+from dotenv import load_dotenv
 import os
+
+load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
