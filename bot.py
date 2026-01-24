@@ -11,6 +11,8 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN belum diset")
 
+user_states = {}
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
 def build_main_menu():
@@ -49,25 +51,130 @@ def handle_menu_button(message):
     text = message.text
 
     if text == "➕ Add Workout":
+        user_states[message.from_user.id] = {
+            "step": "muscle",
+            "data": {}
+        }
+
         bot.send_message(
             message.chat.id,
-            "Contoh input:\n\n"
-            "chest bench 4x8 80\n\n"
-            "Format:\n"
-            "<muscle> <exercise> <sets>x<reps> <weight>"
+            "💪 Oke, mulai catat workout\n\n"
+            "Masukkan *muscle group*:\n"
+            "contoh: chest, back, legs"
         )
     elif text == "📋 List Today":
         handle_list_today(message)
     elif text == "📊 Stats Week":
         handle_stats_week(message)
     
-@bot.message_handler(
-        func=lambda m: (
-            m.text is not None and
-            not m.text.startswith("/") and 
-            len(m.text.split()) == 4
+@bot.message_handler(commands=["cancel"])
+def cancel_state(message):
+    user_id = message.from_user.id
+
+    if user_id in user_states:
+        del user_states[user_id]
+
+        bot.send_message(
+            message.chat.id,
+            "Input dibatalkan.\n"
+            "Kita balik ke menu ya.",
+            reply_markup=build_main_menu()
         )
+    else:
+        bot.send_message(
+            message.chat.id,
+            "Tidak ada input yang sedang berjalan.",
+            reply_markup=build_main_menu()
+        )
+
+@bot.message_handler(
+    func=lambda m:(
+        m.text is not None and
+        m.from_user.id in user_states
+    )
 )
+def handle_state_input(message):
+    user_id = message.from_user.id
+    state = user_states[user_id]
+    text = message.text.strip().lower()
+
+    if text in ["batal", "cancel"]:
+        del user_states[user_id]
+        bot.send_message(
+            message.chat.id,
+            "Input dibatalkan.\n"
+            "Balik ke menu.",
+            reply_markup=build_main_menu()
+        )
+        return
+
+    if state["step"] == "muscle":
+        state["data"]["muscle"] = text
+        state["step"] = "exercise"
+
+        bot.reply_to(
+            message,
+            "🏋️ Nama exercise?\n"
+            "contoh: bench, squat"
+        )
+    elif state["step"] == "exercise":
+        state["data"]["exercise"] = text
+        state["step"] = "sets_reps"
+
+        bot.reply_to(
+            message,
+            "🔢 Set x Reps?\n"
+            "contoh: 4x8"
+        )
+
+    elif state["step"] == "sets_reps":
+        if "x" not in text:
+            bot.reply_to(message, "❌ Format salah. Contoh: 4x8")
+            return
+    
+        sets, reps = text.split("x")
+        if not (sets.isdigit() and reps.isdigit()):
+            bot.reply_to(message, "❌ Set & reps harus angka")
+            return
+        
+        state["data"]["sets"] = int(sets)
+        state["data"]["reps"] = int(reps)
+        state["step"] = "weight"
+
+        bot.reply_to(
+            message,
+            "⚖️ Berat (kg)?\n"
+            "contoh: 80"
+        )
+
+    elif state["step"] == "weight":
+        if not text.isdigit():
+            bot.reply_to(message, "❌ Weight harus angka")
+            return
+        
+        state["data"]["weight"] = int(text)
+
+        workout = {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "user": message.from_user.username or message.from_user.first_name,
+            **state["data"]
+        }
+
+        try:
+            append_workout(workout)
+        except Exception as e:
+            print("ERROR append_workout", e)
+            bot.reply_to(message, "❌ Gagal menyimpan workout")
+            return
+        
+        bot.reply_to(
+            message,
+            "✅ Workout tersimpan!\n"
+            f"{workout['muscle']} - {workout['exercise']}\n"
+            f"{workout['sets']}x{workout['reps']} @{workout['weight']} kg"
+        )
+
+        del user_states[message.from_user.id]
 
 def shortcut_handle(message):
     parts = message.text.split()
