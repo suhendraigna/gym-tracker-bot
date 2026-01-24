@@ -40,6 +40,32 @@ def handle_start(message):
         message.chat.id, welcome_text, reply_markup=build_main_menu()
     )
 
+def build_muscle_keyboard():
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+
+    muscles = [
+        ("Chest", "muscle:chest"),
+        ("Back", "muscle:back"),
+        ("Legs", "muscle:legs"),
+        ("Shoulders", "muscle:shoulders"),
+        ("Arms", "muscle:arms")
+    ]
+
+    buttons = [
+        types.InlineKeyboardButton(text=name, callback_data=cb)
+        for name, cb in muscles
+    ]
+
+    keyboard.add(*buttons)
+    return keyboard
+
+def build_cancel_keyboard():
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(
+        types.InlineKeyboardButton("❌ Cancel", callback_data="action:cancel")
+    )
+    return keyboard
+
 @bot.message_handler(
     func=lambda m: m.text is not None and m.text in[
         "➕ Add Workout",
@@ -59,13 +85,49 @@ def handle_menu_button(message):
         bot.send_message(
             message.chat.id,
             "💪 Oke, mulai catat workout\n\n"
-            "Masukkan *muscle group*:\n"
-            "contoh: chest, back, legs"
+            "Pilih muscle group:",
+            reply_markup=build_muscle_keyboard()
         )
     elif text == "📋 List Today":
         handle_list_today(message)
     elif text == "📊 Stats Week":
         handle_stats_week(message)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("muscle:"))
+def handle_muscle_callback(call):
+    user_id = call.from_user.id
+
+    if user_id not in user_states:
+        bot.answer_callback_query(call.id, "Session sudah tidak aktif")
+        return
+    
+    muscle = call.data.split(":")[1]
+
+    state = user_states[user_id]
+    state["data"]["muscle"] = muscle
+    state["step"] = "exercise"
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        f"Muscle dipilih: *{muscle}*\n\n"
+        "Sekarang masukkan nama exercise:",
+        reply_markup=None
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "action:cancel")
+def handle_inline_cancel(call):
+    user_id = call.from_user.id
+
+    if user_id in user_states:
+        del user_states[user_id]
+    
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "Input dibatalkan.\nBalik ke menu.",
+        reply_markup=build_main_menu()
+    )
     
 @bot.message_handler(commands=["cancel"])
 def cancel_state(message):
@@ -108,23 +170,15 @@ def handle_state_input(message):
         )
         return
 
-    if state["step"] == "muscle":
-        state["data"]["muscle"] = text
-        state["step"] = "exercise"
-
-        bot.reply_to(
-            message,
-            "🏋️ Nama exercise?\n"
-            "contoh: bench, squat"
-        )
-    elif state["step"] == "exercise":
+    if state["step"] == "exercise":
         state["data"]["exercise"] = text
         state["step"] = "sets_reps"
 
         bot.reply_to(
             message,
             "🔢 Set x Reps?\n"
-            "contoh: 4x8"
+            "contoh: 4x8",
+            reply_markup=build_cancel_keyboard()
         )
 
     elif state["step"] == "sets_reps":
